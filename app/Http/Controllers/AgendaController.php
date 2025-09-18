@@ -11,6 +11,18 @@ use App\Services\AgendaService;
 class AgendaController extends Controller
 {
 
+    public static $rules = [
+            'tipo'          => 'required|string',
+            'descripcion'   => 'required|string',
+            'folio'         => 'required|integer',
+            'user_id'       => 'required|integer',
+            'municipio'     => 'required|string',
+            'poblacion'     => 'required|string',
+            'fechaInicio'   => 'required|date',
+            'horaInicio'    => 'required|date_format:H:i:s',
+            'horaFin'       => 'required|date_format:H:i:s|after:horaInicio',
+        ];
+
     public function __construct(private AgendaService $agendaService) {}
     
     public function index()
@@ -24,40 +36,21 @@ class AgendaController extends Controller
        
     }
 
-    
+        
     public function store(Request $request)
     {
         //
-        
-
-        $request->validate([
-            'tipo'          => 'required|string',
-            'descripcion'   => 'required|string',
-            'folio'         => 'required|integer',
-            'user_id'       => 'required|integer',
-            'municipio'     => 'required|string',
-            'poblacion'     => 'required|string',
-            'fechaInicio'   => 'required|date',
-            'horaInicio'    => 'required|date_format:H:i:s',
-            'horaFin'       => 'required|date_format:H:i:s|after:horaInicio',
-        ]);
+        $request->validate(self::$rules);
 
         //reglas de validacion (Service)
-        //$this->agendaService->folioUnique((int)$request->folio);
-        if ($conflict = $this->agendaService->folioUnique((int)$request->folio)) {
+        if ($conflicto = $this->agendaService->folioUnique((int)$request->folio)) {
             return response()->json([
                 'message'  => 'El folio ya existe.',
-                'conflict' => $conflict,   // 👈 devolvemos la info asignada a ese folio
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                'conflict' => $conflicto,  //devolvemos info del folio
+            ],422);
         }
-        
-        $this->agendaService->agendaOcupada(
-            (int)$request->user_id,
-            $request->fechaInicio,
-            $request->horaInicio,
-            $request->horaFin
-        );
-        /* $overlaps = $this->agendaService->agendaOcupada(
+
+        $overlaps = $this->agendaService->agendaOcupada(
             (int)$request->user_id,
             $request->fechaInicio,
             $request->horaInicio,
@@ -67,11 +60,9 @@ class AgendaController extends Controller
         if ($overlaps->isNotEmpty()) {
             return response()->json([
                 'message'   => 'El usuario ya tiene agenda en ese horario.',
-                'conflicts' => $overlaps,  // devolvemos lo que ya tiene agendado
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }*/
-
-
+                'conflicts' => $overlaps,  // devolver agenda
+            ], 422);
+        } 
 
         $agenda = DB::transaction(function () use ($request) {  
 
@@ -116,49 +107,69 @@ class AgendaController extends Controller
         //
          $agenda = Agenda::findOrFail($id);
 
-        $request->validate([
-            'tipo'          => 'required|string',
-            'descripcion'   => 'required|string',
-            'folio'         => 'required|integer',
-            'user_id'       => 'required|integer',
-            'municipio'     => 'required|string',
-            'poblacion'     => 'required|string',
-            'fechaInicio'   => 'required|date',
-            'horaInicio'    => 'required|date_format:H:i:s',
-            'horaFin'       => 'required|date_format:H:i:s|after:horaInicio',
-        ]);
+        $request->validate(self::$rules);
 
-        //reglas de validacion (Service)
-        $this->agendaService->folioUnique((int)$request->folio);
-        $this->agendaService->agendaOcupada(
-            (int)$request->user_id,
-            $request->fechaInicio,
-            $request->horaInicio,
-            $request->horaFin,
-            $agenda->id
+        // Normalizar/castear lo que comparamos
+    $newFolio   = $request->folio;
+    $userId     = $request->user_id;
+    $fecha      = $request->fechaInicio;
+    $horaInicio = $request->horaInicio; 
+    $horaFin    = $request->horaFin;    
+
+    
+    if ($newFolio !== (int)$agenda->folio) {
+        if ($conflicto = $this->agendaService->folioUnique($newFolio, $agenda->id)) {
+            return response()->json([
+                'message'   => 'El folio ya existe.',
+                'conflicto' => $conflicto, // devolvemos info del folio existente
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
+
+    // valida si cambian los registros
+    $relevantesCambiaron = (
+        $userId           !== (int)$agenda->user_id ||
+        $fecha            !== $agenda->fechaInicio  ||
+        $horaInicio       !== $agenda->horaInicio   ||
+        $horaFin          !== $agenda->horaFin
+    );
+
+    if ($relevantesCambiaron) {
+        $overlaps = $this->agendaService->agendaOcupada(
+            $userId,
+            $fecha,
+            $horaInicio,
+            $horaFin,
+            $agenda->id 
         );
 
-        $agenda = DB::transaction(function () use ($request) {  
+        if ($overlaps->isNotEmpty()) {
+            return response()->json([
+                'message'   => 'El usuario ya tiene agenda en ese horario.',
+                'conflicts' => $overlaps, // devolvemos las agendas que chocan
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+    }
 
-        $agenda = new Agenda;
-        $agenda->tipo           = $request->tipo;
-        $agenda->descripcion    = $request->descripcion;
-        $agenda->folio          = $request->folio;
-        $agenda->user_id        = $request->user_id;
-        $agenda->municipio      = $request->municipio;
-        $agenda->poblacion      = $request->poblacion;
-        $agenda->fechaInicio    = $request->fechaInicio;
-        $agenda->horaInicio     = $request->horaInicio;
-        $agenda->horaFin        = $request->horaFin;
+    
+    DB::transaction(function () use ($agenda, $request, $newFolio, $userId, $fecha, $horaInicio, $horaFin) {
+        $agenda->tipo         = $request->tipo;
+        $agenda->descripcion  = $request->descripcion;
+        $agenda->folio        = $newFolio;
+        $agenda->user_id      = $userId;
+        $agenda->municipio    = $request->municipio;
+        $agenda->poblacion    = $request->poblacion;
+        $agenda->fechaInicio  = $fecha;
+        $agenda->horaInicio   = $horaInicio;
+        $agenda->horaFin      = $horaFin;
+        $agenda->save();
+    });
 
-        $agenda->update();        
-        return $agenda;
-        });
-
-        return response()->json([
-            'mensaje'   => 'Registro Creado',
-            'data'      => $agenda,
-        ]);
+    
+    return response()->json([
+        'mensaje' => 'Registro Actualizado',
+        'data'    => $agenda->fresh(), 
+    ]);
 
     }
 
