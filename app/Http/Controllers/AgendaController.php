@@ -105,11 +105,11 @@ class AgendaController extends Controller
     public function update(Request $request, $id)
     {
         //
-         $agenda = Agenda::findOrFail($id);
+    $agenda = Agenda::findOrFail($id);
 
-        $request->validate(self::$rules);
+    $request->validate(self::$rules);
 
-        // Normalizar/castear lo que comparamos
+        
     $newFolio   = $request->folio;
     $userId     = $request->user_id;
     $fecha      = $request->fechaInicio;
@@ -128,7 +128,7 @@ class AgendaController extends Controller
 
     // valida si cambian los registros
     $relevantesCambiaron = (
-        $userId           !== (int)$agenda->user_id ||
+        $userId           !== $agenda->user_id ||
         $fecha            !== $agenda->fechaInicio  ||
         $horaInicio       !== $agenda->horaInicio   ||
         $horaFin          !== $agenda->horaFin
@@ -147,7 +147,7 @@ class AgendaController extends Controller
             return response()->json([
                 'message'   => 'El usuario ya tiene agenda en ese horario.',
                 'conflicts' => $overlaps, // devolvemos las agendas que chocan
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            ], 422);
         }
     }
 
