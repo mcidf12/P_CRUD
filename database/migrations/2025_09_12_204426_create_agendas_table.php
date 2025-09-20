@@ -16,7 +16,7 @@ return new class extends Migration
         Schema::create('agendas', function (Blueprint $table) {
             $table->id();
 
-            $table->string('tipo', 10)->nullable();  
+            $table->string('tipo', 11)->nullable();  
             $table->string('descripcion', 250)->nullable(); 
             $table->bigInteger('folio')->nullable();
             $table->bigInteger('user_id')->nullable();

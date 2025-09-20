@@ -24,8 +24,9 @@ class AgendaService
             ->orderBy('horaInicio')
             ->get();
             
-    }    
-    
+    }   
 }
+    
+
 
 
